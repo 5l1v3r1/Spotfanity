@@ -50,10 +50,23 @@ def create_menu():
     }
     r = requests.post('https://accounts.spotify.com/api/token', data=data)
     sp = spotipy.Spotify(auth=r.json()['access_token'])
-    print(sp.current_user())
+
+    length = 0
+    playlists = []
+    while length == 0 or length > len(playlists):
+        playlist_data = sp.current_user_playlists(limit=50, offset=len(playlists))
+        length = playlist_data['total']
+
+        playlists += [{
+            'name': playlist['name'],
+            'id': playlist['id'],
+            'image': playlist['images'][0]['url']
+        } for playlist in playlist_data['items']]
+
     return Response(
-        "",
+        json.dumps(playlists),
         status=r.status_code,
+        content_type='json'
     )
 
 
@@ -81,4 +94,4 @@ def get_track():
         content_type='json'
     )
 
-app.run()
+app.run(debug=True)
