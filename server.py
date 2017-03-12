@@ -3,8 +3,22 @@ from os import environ
 from dotenv import load_dotenv
 import requests
 import json
-from flask import Flask, request, Response, current_app
+import spotipy
+import math
+from flask import Flask, request, Response, render_template
 
+
+def get_score(lyrics):
+    def score_function(x):
+        return 1 - math.exp(x * -74.07113)
+
+    lyrics = lyrics.split()
+    print("Butt" in profanity_list)
+    profanity_words = [word for word in lyrics if word.lower() in profanity_list]
+    profanity_count = len(profanity_words) / len(lyrics)
+    unique_profanity = set(profanity_words)
+    unique_profanity_score = len(unique_profanity) / 7
+    return score_function(profanity_count) * max(0.5, unique_profanity_score), unique_profanity
 
 dotenv_path = join(dirname(__file__), '.env')
 load_dotenv(dotenv_path)
@@ -13,9 +27,35 @@ app = Flask(__name__)
 with open('profanity_list.txt') as f:
     profanity_list = [line.strip() for line in f.readlines()]
 
+
 @app.route('/')
 def send_site():
-    return current_app.send_static_file('index.html')
+    authorize_url = 'https://accounts.spotify.com/authorize/?'
+    params = {
+        'client_id': environ.get('SPOTIPY_CLIENT_ID'),
+        'response_type': 'code',
+        'redirect_uri': 'http://localhost:5000/create'
+    }
+    return render_template('index.html', authorize_url=authorize_url + requests.compat.urlencode(params))
+
+
+@app.route('/create')
+def create_menu():
+    data = {
+        'grant_type': 'authorization_code',
+        'code': request.args.get('code'),
+        'client_id': environ.get('SPOTIPY_CLIENT_ID'),
+        'client_secret': environ.get('SPOTIPY_CLIENT_SECRET'),
+        'redirect_uri': 'http://localhost:5000/create'
+    }
+    r = requests.post('https://accounts.spotify.com/api/token', data=data)
+    sp = spotipy.Spotify(auth=r.json()['access_token'])
+    print(sp.current_user())
+    return Response(
+        "",
+        status=r.status_code,
+    )
+
 
 @app.route('/api/track')
 def get_track():
@@ -26,16 +66,16 @@ def get_track():
         'apikey': environ.get('MUSIXMATCH_KEY')
     }
 
+    print(environ.get('MUSIXMATCH_KEY'))
     r = requests.get('https://api.musixmatch.com/ws/1.1/matcher.lyrics.get', params=params)
     data = r.json()
     lyrics_text = data['message']['body']['lyrics']['lyrics_body']
-    lyrics = lyrics_text.split()
-    profanity_count = [word for word in lyrics if word in profanity_list]
+    score, unique_profanity = get_score(lyrics_text)
     return Response(
         json.dumps({
             'lyrics': lyrics_text,
-            'profanity': profanity_count,
-            'percentage': len(profanity_count) / len(lyrics) * 100
+            'score': score,
+            'unique_profanity': list(unique_profanity)
         }),
         status=r.status_code,
         content_type='json'
